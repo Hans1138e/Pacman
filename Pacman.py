@@ -1,11 +1,11 @@
-﻿from re import S
-import pygame, random
+from re import S
+import pygame, random, sys
 from pygame.math import Vector2
 
 
 pygame.font.init()
 
-#Deffine fixed variable
+#Deffine setup variables
 CELL_SIZE = 20
 CELL_NUMBER_WIDTH = 28
 CELL_NUMBER_HEIGHT = 36
@@ -13,9 +13,8 @@ SCREEN = pygame.display.set_mode((CELL_SIZE * CELL_NUMBER_WIDTH, CELL_SIZE * CEL
 direction = 'STOP'
 clock = pygame.time.Clock()
 dt = clock.tick(60) / 1000
-power_timer = 0
 possible_directions = {'UP': Vector2(0,-1), 'DOWN': Vector2(0, 1), 'LEFT': Vector2(-1, 0), 'RIGHT': Vector2(1,0)}
-door = [Vector2(13, 15), Vector2(14, 15)]
+door = []
 
 #Creating a grid for dev purposes
 def draw_grid():
@@ -48,24 +47,65 @@ class Game:
         
     def update(self):
         self.pacman.positioning()
-    def game_over(self):
+        self.ghost.move_blinky()
+        self.ghost.move_pinky()
+        self.coin.collision()
+        self.powerups.collision()
+        self.ghost.transfer()
+        self.pacman.collision()
+        print(len(game.coin.position), len(game.powerups.position))
+        if len(game.coin.position) < 1 and len(game.powerups.position) < 1:
+            self.game_win()
+
+    def reset(self):
         self.score.point = 0
         self.ghost.in_house = [False, True, True, True]
+        self.ghost.unlock_timer = 0
         self.walls.position.clear()
         self.coin.position.clear()
         self.powerups.position.clear()
         self.ghost.position.clear()
-        self.level.positions()  
-        self.state = 'STOPPED'
+        self.level.positions() 
 
-class Score:
-    def __init__(self):
-        self.position = Vector2(9, 1)
-        self.point = 0
-    def draw(self):
-        font = pygame.font.Font('Graphics/arcade.ttf', 45)
-        score_text = font.render(f'Score    {self.point}', True, 'red')
-        SCREEN.blit(score_text, self.position * CELL_SIZE)
+
+    def game_over(self):
+        self.reset() 
+        self.state = 'STOPPED'
+        while self.state == 'STOPPED':
+            SCREEN.fill((0,0,0))
+            font = pygame.font.Font('Graphics/arcade.ttf', 75)
+            small_font = pygame.font.Font('Graphics/arcade.ttf', 35)
+            game_over_text = font.render('GAME OVER', True, 'red')
+            SCREEN.blit(game_over_text, (CELL_SIZE * 6, CELL_SIZE * 15))
+            play_again = small_font.render('Press   SPACE  to   play   again', True, 'yellow')
+            SCREEN.blit(play_again, (CELL_SIZE * 3, CELL_SIZE * 20))
+            pygame.display.update()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        self.state = 'RUNNING'
+    def game_win(self):
+        self.reset()
+        self.state = 'STOPPED'
+        while self.state == 'STOPPED':
+            SCREEN.fill((0,0,0))
+            font = pygame.font.Font('Graphics/arcade.ttf', 75)
+            small_font = pygame.font.Font('Graphics/arcade.ttf', 35)
+            game_over_text = font.render('YOU  WIN', True, 'green')
+            SCREEN.blit(game_over_text, (CELL_SIZE * 7, CELL_SIZE * 15))
+            play_again = small_font.render('Press   SPACE  to   play   again', True, 'yellow')
+            SCREEN.blit(play_again, (CELL_SIZE * 3, CELL_SIZE * 20))
+            pygame.display.update()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        self.state = 'RUNNING'
 
 class Pacman:
     def __init__(self):
@@ -87,6 +127,11 @@ class Pacman:
         # --- move forward if possible ---
         if self.can_move(self.direction):
             self.position += self.direction
+        
+        if self.position == Vector2(CELL_NUMBER_WIDTH, self.position.y):
+            self.position = Vector2(0, self.position.y)
+        elif self.position == Vector2(- 1, self.position.y):
+            self.position = Vector2(CELL_NUMBER_WIDTH - 1, self.position.y)
 
     def can_move(self, direction):
         if direction.length() == 0:
@@ -94,12 +139,35 @@ class Pacman:
         next_tile = self.position + direction
         return next_tile not in game.walls.position
 
+    def collision(self):
+        if self.position in game.ghost.position:
+            if game.powerups.power:
+                ghost_index = game.ghost.position.index(self.position)
+                game.ghost.position[ghost_index] = Vector2(13, 17)
+                game.ghost.in_house[ghost_index] = True
+                game.score.point += 50
+            else:
+                game.game_over()
+
+class Score:
+    def __init__(self):
+        self.position = Vector2(9, 1)
+        self.point = 0
+    def draw(self):
+        font = pygame.font.Font('Graphics/arcade.ttf', 45)
+        score_text = font.render(f'Score    {self.point}', True, 'red')
+        SCREEN.blit(score_text, self.position * CELL_SIZE)
+
 class Coins:
     def __init__(self):
         self.position = []
     def draw(self):
         for coin in self.position:
             pygame.draw.circle(SCREEN, (255, 215, 0), ((coin.x * CELL_SIZE) + CELL_SIZE // 2, (coin.y * CELL_SIZE) + CELL_SIZE // 2), CELL_SIZE // 6)
+    def collision(self):
+        if game.pacman.position in self.position:
+            self.position.remove(game.pacman.position)
+            game.score.point += 1
 
 class Walls:
     def __init__(self):
@@ -112,9 +180,18 @@ class PowerUps:
     def __init__(self):
         self.position = []
         self.power = False
+        self.timer = 0
     def draw(self):
         for powerups in self.position:
             pygame.draw.circle(SCREEN, (255, 215, 0), ((powerups.x * CELL_SIZE) + CELL_SIZE // 2, (powerups.y * CELL_SIZE) + CELL_SIZE // 2), CELL_SIZE // 3)
+    def collision(self):
+        if game.pacman.position in self.position:
+            self.position.remove(game.pacman.position)
+            game.score.point += 10
+            self.timer = 0
+            self.power = True
+        if self.timer >= 5:
+            self.power = False
         
 
 class Ghost: #implement 4 different ghosts with different colors and behaviors
@@ -122,139 +199,129 @@ class Ghost: #implement 4 different ghosts with different colors and behaviors
         self.position = [] #0 = blinky, 1 = pinky, 2 = inky, 3 = clyde
         self.door_pos = Vector2(0, 0)
         self.in_house = [False, True, True, True]
-        self.texture_blinky = pygame.image.load('Graphics/BLINKY.gif')
-        self.texture_pinky = pygame.image.load('Graphics/PINKY.gif')
-        self.texture_inky = pygame.image.load('Graphics/INKY.gif')
-        self.texture_clyde = pygame.image.load('Graphics/CLYDE.gif')
-        self.blinky_direction = Vector2(1,0)
+        self.texture = {0: pygame.image.load('Graphics/BLINKY.gif'), 1: pygame.image.load('Graphics/PINKY.gif'),
+                        2: pygame.image.load('Graphics/INKY.gif'), 3: pygame.image.load('Graphics/CLYDE.gif'),
+                        4: pygame.image.load('Graphics/scared_ghost.png')}
+        self.direction = {0: Vector2(1, 0), 1: Vector2(1, 0), 2: Vector2(1, 0), 3: Vector2(1, 0)}
         self.pinky_direction = Vector2(1,0)
+        self.unlock_timer = 0
     def draw(self):
-        blinky_rect = pygame.Rect(self.position[0].x * CELL_SIZE, self.position[0].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-        pinky_rect = pygame.Rect(self.position[1].x * CELL_SIZE, self.position[1].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-        inky_rect = pygame.Rect(self.position[2].x * CELL_SIZE, self.position[2].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-        clyde_rect = pygame.Rect(self.position[3].x * CELL_SIZE, self.position[3].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-        ghost_size = (CELL_SIZE, CELL_SIZE)
-        blinky_scale = pygame.transform.scale(self.texture_blinky, ghost_size)
-        pinky_scale = pygame.transform.scale(self.texture_pinky, ghost_size)
-        inky_scale = pygame.transform.scale(self.texture_inky, ghost_size)
-        clyde_scale = pygame.transform.scale(self.texture_clyde, ghost_size)
-        SCREEN.blit(blinky_scale, blinky_rect)
-        SCREEN.blit(pinky_scale, pinky_rect)
-        SCREEN.blit(inky_scale, inky_rect)
-        SCREEN.blit(clyde_scale, clyde_rect)
+        if game.powerups.power == False:
+            for ghost in range(4):
+                rect = pygame.Rect(self.position[ghost].x * CELL_SIZE, self.position[ghost].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                scale = pygame.transform.scale(self.texture[ghost], (CELL_SIZE, CELL_SIZE))
+                SCREEN.blit(scale, rect)
+        elif game.powerups.power:
+            for ghost in range(4):
+                rect = pygame.Rect(self.position[ghost].x * CELL_SIZE, self.position[ghost].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                scale = pygame.transform.scale(self.texture[4], (CELL_SIZE, CELL_SIZE))
+                SCREEN.blit(scale, rect)
+    def transfer(self):
+        for i in range(4):
+            if self.position[i] == Vector2(CELL_NUMBER_WIDTH, self.position[i].y):
+                self.position[i] = Vector2(0, self.position[i].y)
+            elif self.position[i] == Vector2(- 1, self.position[i].y):
+                self.position[i] = Vector2(CELL_NUMBER_WIDTH - 1, self.position[i].y)
+
     def move_blinky(self):
         pos = self.position[0]
 
         if self.in_house[0]:
-            pos = self.position[0]
-
-            # 1) Move horizontally to align with door x
-            if pos.x < self.door_pos.x:
-                step = pos + Vector2(1, 0)
-                if step not in game.walls.position:
-                    self.position[0] = step
-                    return
-            elif pos.x > self.door_pos.x:
-                step = pos + Vector2(-1, 0)
-                if step not in game.walls.position:
-                    self.position[0] = step
-                    return
-
-            # 2) Aligned: attempt to move up through the door
-            step = pos + Vector2(0, -1)
-            if step not in game.walls.position:
-                self.position[0] = step
-                # mark out once we've moved through the door tile or above it
-                if step == self.door_pos or step.y < self.door_pos.y:
-                    self.in_house[0] = False
-                return
-
-            # If blocked for some unexpected reason, do nothing this tick
+            in_house(0)
             return
-        if is_intersection(pos, game.walls.position):
-            best_dir = self.blinky_direction
-            best_dist = 99999
-            for direction in possible_directions.values():
-                if direction == -self.blinky_direction:
-                    continue
-
-                test_pos = pos + direction
-                if test_pos not in game.walls.position and test_pos not in door:
-                    dist = pytagore(
-                        test_pos.x - game.pacman.position.x,
-                        test_pos.y - game.pacman.position.y
-                    )
-                    if dist < best_dist:
-                        best_dist = dist
-                        best_dir = direction
-
-            self.blinky_direction = best_dir
-
-        next_pos = pos + self.blinky_direction
-        if next_pos not in game.walls.position and next_pos not in door:
-            self.position[0] = next_pos
-
-
-
-
+        if game.powerups.power == False:
+            hunting(0,1)
+        elif game.powerups.power:
+            escaping(0,1)
 
 
     def move_pinky(self):
-        pos = self.position[1]
-
-        if self.in_house[1]:
+        if self.unlock_timer > 2:
             pos = self.position[1]
 
-            # 1) Move horizontally to align with door x
-            if pos.x < self.door_pos.x:
-                step = pos + Vector2(1, 0)
-                if step not in game.walls.position:
-                    self.position[1] = step
-                    return
-            elif pos.x > self.door_pos.x:
-                step = pos + Vector2(-1, 0)
-                if step not in game.walls.position:
-                    self.position[1] = step
-                    return
-
-            # 2) Aligned: attempt to move up through the door
-            step = pos + Vector2(0, -1)
-            if step not in game.walls.position:
-                self.position[1] = step
-                # mark out once we've moved through the door tile or above it
-                if step.y < self.door_pos.y:
-                    self.in_house[1] = False
+            if self.in_house[1]:
+                in_house(1)
                 return
+            if game.powerups.power == False:
+                hunting(1,4)
+            elif game.powerups.power:
+                escaping(1,4)
 
-            # If blocked for some unexpected reason, do nothing this tick
-            return
-        
+def hunting(gho,target):
+        pos = game.ghost.position[gho]
         if is_intersection(pos, game.walls.position):
-            best_dir = self.pinky_direction
+            best_dir = game.ghost.direction[gho]
             best_dist = 99999
             for direction in possible_directions.values():
-                if direction == -self.pinky_direction:
+                if direction == -game.ghost.direction[gho]:
                     continue
 
                 test_pos = pos + direction
                 if test_pos not in game.walls.position and test_pos not in door:
                     dist = pytagore(
-                        test_pos.x - (game.pacman.position.x + (game.pacman.next_direction.x * 4)),
-                        test_pos.y - (game.pacman.position.y + (game.pacman.next_direction.y * 4))
+                        test_pos.x - (game.pacman.position.x + (game.pacman.next_direction.x * target)),
+                        test_pos.y - (game.pacman.position.y + (game.pacman.next_direction.y * target))
                     )
                     if dist < best_dist:
                         best_dist = dist
                         best_dir = direction
 
-            self.pinky_direction = best_dir
+            game.ghost.direction[gho] = best_dir
 
-        next_pos = pos + self.pinky_direction
+        next_pos = pos + game.ghost.direction[gho]
         if next_pos not in game.walls.position and next_pos not in door:
-            self.position[1] = next_pos
+            game.ghost.position[gho] = next_pos
+def escaping(gho, target):
+        pos = game.ghost.position[gho]
+        if is_intersection(pos, game.walls.position):
+            best_dir = game.ghost.direction[gho]
+            best_dist = 0
+            for direction in possible_directions.values():
+                if direction == -game.ghost.direction[gho]:
+                    continue
 
+                test_pos = pos + direction
+                if test_pos not in game.walls.position and test_pos not in door:
+                    dist = pytagore(
+                        test_pos.x - (game.pacman.position.x + (game.pacman.next_direction.x * target)),
+                        test_pos.y - (game.pacman.position.y + (game.pacman.next_direction.y * target))
+                    )
+                    if dist > best_dist:
+                        best_dist = dist
+                        best_dir = direction
 
+            game.ghost.direction[gho] = best_dir
 
+        next_pos = pos + game.ghost.direction[gho]
+        if next_pos not in game.walls.position and next_pos not in door:
+            game.ghost.position[gho] = next_pos
 
+def in_house(gho):
+        pos = game.ghost.position[gho]
+
+        # 1) Move horizontally to align with door x
+        if pos.x < game.ghost.door_pos.x:
+            step = pos + Vector2(1, 0)
+            if step not in game.walls.position:
+                game.ghost.position[gho] = step
+                return
+        elif pos.x > game.ghost.door_pos.x:
+            step = pos + Vector2(-1, 0)
+            if step not in game.walls.position:
+                game.ghost.position[gho] = step
+                return
+
+        # 2) Aligned: attempt to move up through the door
+        step = pos + Vector2(0, -1)
+        if step not in game.walls.position:
+            game.ghost.position[gho] = step
+            # mark out once we've moved through the door tile or above it
+            if step.y < game.ghost.door_pos.y:
+                game.ghost.in_house[gho] = False
+            return
+
+        # If blocked for some unexpected reason, do nothing this tick
+        return
 def pytagore(a,b):
      c2 = a ** 2 + b ** 2
      return c2 ** 0.5
@@ -295,6 +362,7 @@ class Level:
             for col_index, cell in enumerate(row):
                 if cell == '*':
                     game.ghost.door_pos = Vector2(col_index, row_index)
+                    door.append(Vector2(col_index, row_index))
                 elif cell == '0':
                     pass
                 elif cell == '1':
@@ -331,8 +399,6 @@ while run:
         
         if event.type == PACMAN_UPDATE:
 
-            game.ghost.move_blinky()
-            game.ghost.move_pinky()
             keys = pygame.key.get_pressed()
             if keys[pygame.K_UP]:
                 game.pacman.next_direction = Vector2(0, -1)
@@ -345,44 +411,8 @@ while run:
 
             game.update()
 
-    #Coin remove + score
-    if game.pacman.position in game.coin.position:
-        game.coin.position.remove(game.pacman.position)
-        game.score.point += 1
-    
-    #powerup
-    if game.pacman.position in game.powerups.position:
-        game.powerups.position.remove(game.pacman.position)
-        game.score.point += 10
-        power_timer = 0
-        game.powerups.power = True
-    if power_timer >= 10:
-        game.powerups.power = False
-
-    #Pacman movement to opposite side of the grid
-    if game.pacman.position == Vector2(CELL_NUMBER_WIDTH, game.pacman.position.y):
-        game.pacman.position = Vector2(0, game.pacman.position.y)
-    elif game.pacman.position == Vector2(- 1, game.pacman.position.y):
-        game.pacman.position = Vector2(CELL_NUMBER_WIDTH - 1, game.pacman.position.y)
-
-    #Ghost movement to opposite side of the grid
-    for i in range(4):
-        if game.ghost.position[i] == Vector2(CELL_NUMBER_WIDTH, game.ghost.position[i].y):
-            game.ghost.position[i] = Vector2(0, game.ghost.position[i].y)
-        elif game.ghost.position[i] == Vector2(- 1, game.ghost.position[i].y):
-            game.ghost.position[i] = Vector2(CELL_NUMBER_WIDTH - 1, game.ghost.position[i].y) 
-
-    if game.pacman.position in game.ghost.position:
-        if game.powerups.power:
-            ghost_index = game.ghost.position.index(game.pacman.position)
-            game.ghost.position[ghost_index] = Vector2(13, 17)
-            game.ghost.in_house[ghost_index] = True
-            game.score.point += 50
-        else:
-            game.game_over()
-
-    
-    power_timer += dt
+    game.powerups.timer += dt
+    game.ghost.unlock_timer += dt
     #print(power_timer)
     clock.tick(60)
     pygame.display.update()
