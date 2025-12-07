@@ -49,11 +49,12 @@ class Game:
         self.pacman.positioning()
         self.ghost.move_blinky()
         self.ghost.move_pinky()
+        self.ghost.move_inky()
+        self.ghost.move_clyde()
         self.coin.collision()
         self.powerups.collision()
         self.ghost.transfer()
         self.pacman.collision()
-        print(len(game.coin.position), len(game.powerups.position))
         if len(game.coin.position) < 1 and len(game.powerups.position) < 1:
             self.game_win()
 
@@ -113,7 +114,6 @@ class Pacman:
         self.texture = pygame.image.load('Graphics/pacman.png')
         self.direction = Vector2(0,0)
         self.next_direction = Vector2(0,0)
-        self.speed = 1
     def draw(self):
         pacman_rect = pygame.Rect(self.position.x * CELL_SIZE, self.position.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
         pacman_size = (CELL_SIZE, CELL_SIZE)
@@ -123,11 +123,10 @@ class Pacman:
         # --- try to turn if possible ---
         if self.can_move(self.next_direction):
             self.direction = self.next_direction
-
         # --- move forward if possible ---
         if self.can_move(self.direction):
             self.position += self.direction
-        
+ 
         if self.position == Vector2(CELL_NUMBER_WIDTH, self.position.y):
             self.position = Vector2(0, self.position.y)
         elif self.position == Vector2(- 1, self.position.y):
@@ -140,6 +139,7 @@ class Pacman:
         return next_tile not in game.walls.position
 
     def collision(self):
+        
         if self.position in game.ghost.position:
             if game.powerups.power:
                 ghost_index = game.ghost.position.index(self.position)
@@ -148,6 +148,7 @@ class Pacman:
                 game.score.point += 50
             else:
                 game.game_over()
+                
 
 class Score:
     def __init__(self):
@@ -224,8 +225,6 @@ class Ghost: #implement 4 different ghosts with different colors and behaviors
                 self.position[i] = Vector2(CELL_NUMBER_WIDTH - 1, self.position[i].y)
 
     def move_blinky(self):
-        pos = self.position[0]
-
         if self.in_house[0]:
             in_house(0)
             return
@@ -236,9 +235,7 @@ class Ghost: #implement 4 different ghosts with different colors and behaviors
 
 
     def move_pinky(self):
-        if self.unlock_timer > 2:
-            pos = self.position[1]
-
+        if self.unlock_timer > 3:
             if self.in_house[1]:
                 in_house(1)
                 return
@@ -246,7 +243,31 @@ class Ghost: #implement 4 different ghosts with different colors and behaviors
                 hunting(1,4)
             elif game.powerups.power:
                 escaping(1,4)
-
+    def move_inky(self):
+        if len(game.coin.position) <= (len(game.coin.position) - 30) or self.unlock_timer > 6:
+            if self.in_house[2]:
+                in_house(2)
+                return
+            if game.powerups.power == False:
+                inky_hunting(2, 2)
+            elif game.powerups.power:
+                inky_escaping(2,2)
+    def move_clyde(self):
+        if len(game.coin.position) <= (len(game.coin.position) - 60) or self.unlock_timer > 12:
+            if self.in_house[3]:
+                in_house(3)
+                return
+            if game.powerups.power == False:
+                if pytagore(
+                    self.position[3].x - (game.pacman.position.x + game.pacman.next_direction.x),
+                        self.position[3].y - (game.pacman.position.y + game.pacman.next_direction.y)
+                    ) > 8:
+                    hunting(3, 1)
+                else:
+                    escaping(3, 1)
+            elif game.powerups.power:
+                escaping(3, 1)
+                
 def hunting(gho,target):
         pos = game.ghost.position[gho]
         if is_intersection(pos, game.walls.position):
@@ -295,7 +316,54 @@ def escaping(gho, target):
         next_pos = pos + game.ghost.direction[gho]
         if next_pos not in game.walls.position and next_pos not in door:
             game.ghost.position[gho] = next_pos
+def inky_hunting(gho, target):
+        pos = game.ghost.position[gho]
+        if is_intersection(pos, game.walls.position):
+            best_dir = game.ghost.direction[gho]
+            best_dist = 99999
+            for direction in possible_directions.values():
+                if direction == -game.ghost.direction[gho]:
+                    continue
 
+                test_pos = pos + direction
+                if test_pos not in game.walls.position and test_pos not in door:
+                    dist = pytagore(
+                        test_pos.x - ((game.ghost.position[0].x - (game.ghost.position[0].x - game.pacman.position.x) * 2) + (game.pacman.next_direction.x * target)),
+                        test_pos.y - ((game.ghost.position[0].y - (game.ghost.position[0].y - game.pacman.position.y) * 2) + (game.pacman.next_direction.y * target))
+                    )
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_dir = direction
+
+            game.ghost.direction[gho] = best_dir
+
+        next_pos = pos + game.ghost.direction[gho]
+        if next_pos not in game.walls.position and next_pos not in door:
+            game.ghost.position[gho] = next_pos
+def inky_escaping(gho, target):
+        pos = game.ghost.position[gho]
+        if is_intersection(pos, game.walls.position):
+            best_dir = game.ghost.direction[gho]
+            best_dist = 0
+            for direction in possible_directions.values():
+                if direction == -game.ghost.direction[gho]:
+                    continue
+
+                test_pos = pos + direction
+                if test_pos not in game.walls.position and test_pos not in door:
+                    dist = pytagore(
+                        test_pos.x - ((game.ghost.position[0].x - (game.ghost.position[0].x - game.pacman.position.x) * 2) + (game.pacman.next_direction.x * target)),
+                        test_pos.y - ((game.ghost.position[0].y - (game.ghost.position[0].y - game.pacman.position.y) * 2) + (game.pacman.next_direction.y * target))
+                    )
+                    if dist > best_dist:
+                        best_dist = dist
+                        best_dir = direction
+
+            game.ghost.direction[gho] = best_dir
+
+        next_pos = pos + game.ghost.direction[gho]
+        if next_pos not in game.walls.position and next_pos not in door:
+            game.ghost.position[gho] = next_pos
 def in_house(gho):
         pos = game.ghost.position[gho]
 
@@ -385,7 +453,7 @@ class Level:
 game = Game()
 game.level.positions()
 PACMAN_UPDATE = pygame.USEREVENT
-pygame.time.set_timer(PACMAN_UPDATE, 100)
+pygame.time.set_timer(PACMAN_UPDATE, 180)
 run = True
 while run:
     SCREEN.fill((0,0,0))
@@ -413,7 +481,6 @@ while run:
 
     game.powerups.timer += dt
     game.ghost.unlock_timer += dt
-    #print(power_timer)
     clock.tick(60)
     pygame.display.update()
 
