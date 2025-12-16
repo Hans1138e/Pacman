@@ -2,7 +2,6 @@ from re import S
 import pygame, random, sys
 from pygame.math import Vector2
 
-
 pygame.font.init()
 
 #Deffine setup variables
@@ -47,10 +46,10 @@ class Game:
         
     def update(self):
         self.pacman.positioning()
-        self.ghost.move_blinky()
-        self.ghost.move_pinky()
-        self.ghost.move_inky()
-        self.ghost.move_clyde()
+        #self.ghost.move_blinky()
+        #self.ghost.move_pinky()
+        #self.ghost.move_inky()
+        #self.ghost.move_clyde()
         self.coin.collision()
         self.powerups.collision()
         self.ghost.transfer()
@@ -70,6 +69,8 @@ class Game:
 
 
     def game_over(self):
+        self.score.high_score = self.score.point
+        self.score.save_high_score()
         self.reset() 
         self.state = 'STOPPED'
         while self.state == 'STOPPED':
@@ -89,6 +90,8 @@ class Game:
                     if event.key == pygame.K_SPACE:
                         self.state = 'RUNNING'
     def game_win(self):
+        self.score.high_score = self.score.point
+        self.score.save_high_score()
         self.reset()
         self.state = 'STOPPED'
         while self.state == 'STOPPED':
@@ -111,9 +114,11 @@ class Game:
 class Pacman:
     def __init__(self):
         self.position = Vector2(0,0)
+        self.hitbox = pygame.Rect(self.position.x * CELL_SIZE, self.position.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
         self.texture = pygame.image.load('Graphics/pacman.png')
         self.direction = Vector2(0,0)
         self.next_direction = Vector2(0,0)
+        self.speed = 1
     def draw(self):
         pacman_rect = pygame.Rect(self.position.x * CELL_SIZE, self.position.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
         pacman_size = (CELL_SIZE, CELL_SIZE)
@@ -131,33 +136,50 @@ class Pacman:
             self.position = Vector2(0, self.position.y)
         elif self.position == Vector2(- 1, self.position.y):
             self.position = Vector2(CELL_NUMBER_WIDTH - 1, self.position.y)
+        
+        self.hitbox = pygame.Rect(self.position.x * CELL_SIZE, self.position.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
 
     def can_move(self, direction):
-        if direction.length() == 0:
-            return False
-        next_tile = self.position + direction
-        return next_tile not in game.walls.position
+        pacman_hitbox = pygame.Rect((self.position.x + direction.x) * CELL_SIZE, (self.position.y + direction.y) * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+        for wall in game.walls.hitbox:
+            if wall.colliderect(pacman_hitbox):
+                return False
+        return True
+            
 
     def collision(self):
-        
-        if self.position in game.ghost.position:
-            if game.powerups.power:
-                ghost_index = game.ghost.position.index(self.position)
-                game.ghost.position[ghost_index] = Vector2(13, 17)
-                game.ghost.in_house[ghost_index] = True
-                game.score.point += 50
-            else:
-                game.game_over()
+        for gho in game.ghost.hitbox:
+            if self.hitbox.colliderect(gho):
+                print('Yes it is collision')
+                if game.powerups.power:
+                    ghost_index = game.ghost.position.index(self.position)
+                    game.ghost.position[ghost_index] = Vector2(13, 17)
+                    game.ghost.in_house[ghost_index] = True
+                    game.score.point += 50
+                else:
+                    game.game_over()
                 
 
 class Score:
     def __init__(self):
         self.position = Vector2(9, 1)
+        self.high_position = Vector2(21, 1)
         self.point = 0
+        self.high_score = 0
+        self.file = f'high_score.txt'
+        with open(self.file, 'r') as score_file:
+            self.high_score = score_file.read()
     def draw(self):
         font = pygame.font.Font('Graphics/arcade.ttf', 45)
         score_text = font.render(f'Score    {self.point}', True, 'red')
         SCREEN.blit(score_text, self.position * CELL_SIZE)
+        small_font = pygame.font.Font('Graphics/arcade.ttf', 20)
+        high_score_text = small_font.render(f'High Score {self.high_score}', True, 'white')
+        SCREEN.blit(high_score_text, self.high_position * CELL_SIZE / 2)
+    def save_high_score(self):
+        with open(self.file, 'w') as score_file:
+            score_file.write(f'{self.high_score}')
+    
 
 class Coins:
     def __init__(self):
@@ -173,10 +195,10 @@ class Coins:
 class Walls:
     def __init__(self):
         self.position = []
+        self.hitbox = []
     def draw(self):
         for wall in self.position:
             pygame.draw.rect(SCREEN, ('blue'), (int(wall.x) * CELL_SIZE, int(wall.y) * CELL_SIZE, CELL_SIZE - (CELL_SIZE / 4), CELL_SIZE - (CELL_SIZE / 4)))
-
 class PowerUps:
     def __init__(self):
         self.position = []
@@ -198,6 +220,7 @@ class PowerUps:
 class Ghost: #implement 4 different ghosts with different colors and behaviors
     def __init__(self):
         self.position = [] #0 = blinky, 1 = pinky, 2 = inky, 3 = clyde
+        self.hitbox = []
         self.door_pos = Vector2(0, 0)
         self.in_house = [False, True, True, True]
         self.texture = {0: pygame.image.load('Graphics/BLINKY.gif'), 1: pygame.image.load('Graphics/PINKY.gif'),
@@ -292,6 +315,7 @@ def hunting(gho,target):
         next_pos = pos + game.ghost.direction[gho]
         if next_pos not in game.walls.position and next_pos not in door:
             game.ghost.position[gho] = next_pos
+            game.ghost.hitbox[gho] = pygame.Rect(game.ghost.position[gho].x * CELL_SIZE, game.ghost.position[gho].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
 def escaping(gho, target):
         pos = game.ghost.position[gho]
         if is_intersection(pos, game.walls.position):
@@ -316,6 +340,7 @@ def escaping(gho, target):
         next_pos = pos + game.ghost.direction[gho]
         if next_pos not in game.walls.position and next_pos not in door:
             game.ghost.position[gho] = next_pos
+            game.ghost.hitbox[gho] = pygame.Rect(game.ghost.position[gho].x * CELL_SIZE, game.ghost.position[gho].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
 def inky_hunting(gho, target):
         pos = game.ghost.position[gho]
         if is_intersection(pos, game.walls.position):
@@ -340,6 +365,7 @@ def inky_hunting(gho, target):
         next_pos = pos + game.ghost.direction[gho]
         if next_pos not in game.walls.position and next_pos not in door:
             game.ghost.position[gho] = next_pos
+            game.ghost.hitbox[gho] = pygame.Rect(game.ghost.position[gho].x * CELL_SIZE, game.ghost.position[gho].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
 def inky_escaping(gho, target):
         pos = game.ghost.position[gho]
         if is_intersection(pos, game.walls.position):
@@ -364,6 +390,7 @@ def inky_escaping(gho, target):
         next_pos = pos + game.ghost.direction[gho]
         if next_pos not in game.walls.position and next_pos not in door:
             game.ghost.position[gho] = next_pos
+            game.ghost.hitbox[gho] = pygame.Rect(game.ghost.position[gho].x * CELL_SIZE, game.ghost.position[gho].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
 def in_house(gho):
         pos = game.ghost.position[gho]
 
@@ -372,17 +399,20 @@ def in_house(gho):
             step = pos + Vector2(1, 0)
             if step not in game.walls.position:
                 game.ghost.position[gho] = step
+                game.ghost.hitbox[gho] = pygame.Rect(game.ghost.position[gho].x * CELL_SIZE, game.ghost.position[gho].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
                 return
         elif pos.x > game.ghost.door_pos.x:
             step = pos + Vector2(-1, 0)
             if step not in game.walls.position:
                 game.ghost.position[gho] = step
+                game.ghost.hitbox[gho] = pygame.Rect(game.ghost.position[gho].x * CELL_SIZE, game.ghost.position[gho].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
                 return
 
         # 2) Aligned: attempt to move up through the door
         step = pos + Vector2(0, -1)
         if step not in game.walls.position:
             game.ghost.position[gho] = step
+            game.ghost.hitbox[gho] = pygame.Rect(game.ghost.position[gho].x * CELL_SIZE, game.ghost.position[gho].y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
             # mark out once we've moved through the door tile or above it
             if step.y < game.ghost.door_pos.y:
                 game.ghost.in_house[gho] = False
@@ -435,6 +465,7 @@ class Level:
                     pass
                 elif cell == '1':
                     game.walls.position.append(Vector2(col_index, row_index))
+                    game.walls.hitbox.append(pygame.Rect(int(col_index) * CELL_SIZE, int(row_index) * CELL_SIZE, CELL_SIZE, CELL_SIZE))
                 elif cell == '2':
                     game.coin.position.append(Vector2(col_index, row_index))
                 elif cell == '3':
@@ -449,22 +480,23 @@ class Level:
                     game.ghost.position.append(Vector2(col_index, row_index))
                 elif cell == 'P':
                     game.pacman.position = Vector2(col_index, row_index)
+
 #Game loop
 game = Game()
 game.level.positions()
+for gho in range(4):
+    game.ghost.hitbox.append(pygame.Rect(game.ghost.position[gho].x * CELL_SIZE, game.ghost.position[gho].y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 PACMAN_UPDATE = pygame.USEREVENT
-pygame.time.set_timer(PACMAN_UPDATE, 180)
+pygame.time.set_timer(PACMAN_UPDATE, 150)
 run = True
 while run:
     SCREEN.fill((0,0,0))
-    
     game.draw()
     
     #Event handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             run = False
-        
         if event.type == PACMAN_UPDATE:
 
             keys = pygame.key.get_pressed()
